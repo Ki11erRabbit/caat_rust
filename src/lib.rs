@@ -34,6 +34,8 @@ impl Value {
                 for (key, value) in d {
                     result.push_str(&format!("\"{}\": {}, ", key, value.to_json()));
                 }
+                result.pop();
+                result.pop();
                 result.push_str("}");
                 result
             }
@@ -42,6 +44,8 @@ impl Value {
                 for value in l.into_iter() {
                     result.push_str(&format!("{}, ", value.to_json()));
                 }
+                result.pop();
+                result.pop();
                 result.push_str("]");
                 result
             }
