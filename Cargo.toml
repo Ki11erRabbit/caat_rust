@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 json = "0.12.4"
+dirs-next = "2.0.0"
+interprocess = "1.2.1"
