@@ -27,7 +27,7 @@ impl Value {
     pub fn to_json(&self) -> String {
         match self {
             Value::Integer(i) => i.to_string(),
-            Value::String(s) => s.clone(),
+            Value::String(s) => format!("\"{}\"", s.clone()),
             Value::Float(f) => f.to_string(),
             Value::Dictionary(d) => {
                 let mut result = String::from("{");
