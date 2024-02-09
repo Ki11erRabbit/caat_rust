@@ -61,6 +61,9 @@ impl Value {
             result.push_str(&v.to_json());
             result.push_str(", ");
         }
+
+        result.pop();
+        result.pop();
         
         result.push_str("]");
         return result;
