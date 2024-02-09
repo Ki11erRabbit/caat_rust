@@ -493,14 +493,18 @@ impl TryFrom<Value> for HashMap<String, Value> {
 
 pub struct ForeignFunction<'a> {
     pub name: &'a str,
+    args: Vec<&'a str>
 }
 
 
 impl<'a> ForeignFunction<'a> {
     pub fn new<S: ?Sized>(name: &'a S) -> ForeignFunction<'a> 
     where S: AsRef<str> {
+    let split = name.as_ref().split_whitespace().collect::<Vec<&str>>();
+    
     Self {
-            name: name.as_ref(),
+            name: split[0],
+            args: split[1..].to_vec(),
         }
     }
 }
@@ -508,6 +512,9 @@ impl<'a> ForeignFunction<'a> {
 impl ForeignFunction<'_> {
     pub fn call(&self, args: &[Value]) -> Value {
         let mut command = Command::new(self.name);
+        for arg in &self.args {
+            command.arg(arg);
+        }
         for arg in args {
             command.arg(&arg.to_json());
         }
