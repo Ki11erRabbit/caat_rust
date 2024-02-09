@@ -543,7 +543,6 @@ impl ForeignFunction<'_> {
 
 
         let mut stream = loop {
-            eprintln!("looping 1");
             match listener.accept() {
                 Ok(stream) => break stream,
                 Err(e) => {
@@ -557,7 +556,6 @@ impl ForeignFunction<'_> {
         let mut json_string = String::new();
         let mut buffer = [0; 1024];
         loop {
-            eprintln!("looping 2");
             match handle.try_wait() {
                 Ok(Some(status)) => {
                     if !status.success() {
