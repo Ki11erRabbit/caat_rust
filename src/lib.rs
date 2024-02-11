@@ -610,13 +610,7 @@ impl ForeignFunction<'_> {
                             Some(code) => Value::Integer(code as i64),
                             None => Value::Null,
                         };
-                    } else {
-                        std::fs::remove_file(socket_path).unwrap();
-                        return match status.code() {
-                            Some(code) => Value::Integer(code as i64),
-                            None => Value::Null,
-                        };
-                    }
+                    } 
                 },
                 Ok(None) => (),
                 Err(e) => panic!("Error waiting for process: {}", e),
