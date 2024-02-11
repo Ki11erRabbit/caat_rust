@@ -518,7 +518,10 @@ impl ForeignFunction<'_> {
             new_args.push(Value::String(arg.to_string()));
         }
         for arg in args {
-            command.arg(&arg.to_json());
+            match arg {
+                Value::String(value) => command.arg(&value),
+                _ => command.arg(&arg.to_json()),
+            };
         }
         new_args.extend_from_slice(args);
         let json = Value::as_json(&new_args);
