@@ -556,6 +556,7 @@ impl ForeignFunction<'_> {
             }
             if try_wait < 3 {
                 try_wait += 1;
+                std::thread::sleep(std::time::Duration::from_millis(100));
                 continue;
             }
 
