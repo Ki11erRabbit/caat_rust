@@ -544,7 +544,7 @@ impl ForeignFunction<'_> {
         let listener = local_socket::LocalSocketListener::bind(socket_path).expect("Could not bind to socket");
         listener.set_nonblocking(true).expect("Could not set nonblocking");
 
-
+        let mut try_wait = 3;
         let mut stream = loop {
             match listener.accept() {
                 Ok(stream) => break stream,
@@ -553,6 +553,10 @@ impl ForeignFunction<'_> {
                         panic!("Error accepting connection");
                     }
                 }
+            }
+            if try_wait < 3 {
+                try_wait += 1;
+                continue;
             }
 
             match handle.try_wait() {
@@ -574,6 +578,7 @@ impl ForeignFunction<'_> {
                 Ok(None) => (),
                 Err(e) => panic!("Error waiting for process: {}", e),
             }
+            try_wait = 0;
         };
 
         let mut json_string = String::new();
