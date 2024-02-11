@@ -616,7 +616,9 @@ impl ForeignFunction<'_> {
                 Err(e) => panic!("Error waiting for process: {}", e),
             }
             let bytes = stream.read(&mut buffer).unwrap();
+            eprintln!("{}", bytes);
             json_string.push_str(&String::from_utf8_lossy(&buffer[..bytes]));
+            eprintln!("{}", json_string);
             if bytes == 1024 {
                 break;
             }
