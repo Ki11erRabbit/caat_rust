@@ -551,6 +551,24 @@ impl ForeignFunction<'_> {
                     }
                 }
             }
+
+            match handle.try_wait() {
+                Ok(Some(status)) => {
+                    if !status.success() {
+                        return match status.code() {
+                            Some(code) => Value::Integer(code as i64),
+                            None => Value::Null,
+                        };
+                    } else {
+                        return match status.code() {
+                            Some(code) => Value::Integer(code as i64),
+                            None => Value::Null,
+                        };
+                    }
+                },
+                Ok(None) => (),
+                Err(e) => panic!("Error waiting for process: {}", e),
+            }
         };
 
         let mut json_string = String::new();
@@ -563,8 +581,12 @@ impl ForeignFunction<'_> {
                             Some(code) => Value::Integer(code as i64),
                             None => Value::Null,
                         };
+                    } else {
+                        return match status.code() {
+                            Some(code) => Value::Integer(code as i64),
+                            None => Value::Null,
+                        };
                     }
-                    break;
                 },
                 Ok(None) => (),
                 Err(e) => panic!("Error waiting for process: {}", e),
