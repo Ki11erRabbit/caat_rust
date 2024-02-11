@@ -563,12 +563,29 @@ impl ForeignFunction<'_> {
             match handle.try_wait() {
                 Ok(Some(status)) => {
                     if !status.success() {
+                        
+                        match listener.accept() {
+                            Ok(stream) => break stream,
+                            Err(e) => {
+                                if e.kind() != std::io::ErrorKind::WouldBlock {
+                                    panic!("Error accepting connection");
+                                }
+                            }
+                        }
                         std::fs::remove_file(socket_path).unwrap();
                         return match status.code() {
                             Some(code) => Value::Integer(code as i64),
                             None => Value::Null,
                         };
                     } else {
+                        match listener.accept() {
+                            Ok(stream) => break stream,
+                            Err(e) => {
+                                if e.kind() != std::io::ErrorKind::WouldBlock {
+                                    panic!("Error accepting connection");
+                                }
+                            }
+                        }
                         std::fs::remove_file(socket_path).unwrap();
                         return match status.code() {
                             Some(code) => Value::Integer(code as i64),
