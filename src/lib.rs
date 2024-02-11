@@ -555,11 +555,13 @@ impl ForeignFunction<'_> {
             match handle.try_wait() {
                 Ok(Some(status)) => {
                     if !status.success() {
+                        std::fs::remove_file(socket_path).unwrap();
                         return match status.code() {
                             Some(code) => Value::Integer(code as i64),
                             None => Value::Null,
                         };
                     } else {
+                        std::fs::remove_file(socket_path).unwrap();
                         return match status.code() {
                             Some(code) => Value::Integer(code as i64),
                             None => Value::Null,
@@ -577,11 +579,13 @@ impl ForeignFunction<'_> {
             match handle.try_wait() {
                 Ok(Some(status)) => {
                     if !status.success() {
+                        std::fs::remove_file(socket_path).unwrap();
                         return match status.code() {
                             Some(code) => Value::Integer(code as i64),
                             None => Value::Null,
                         };
                     } else {
+                        std::fs::remove_file(socket_path).unwrap();
                         return match status.code() {
                             Some(code) => Value::Integer(code as i64),
                             None => Value::Null,
