@@ -3,7 +3,7 @@ use interprocess::local_socket;
 use std::io::prelude::*;
 use std::collections::HashMap;
 use json::JsonValue;
-use std::fmt;
+use std::fmt::{self, write};
 use std::process::Child;
 #[cfg(windows)]
 use dirs_next::home_dir;
@@ -17,19 +17,20 @@ pub enum Value {
     Integer(i64),
     String(String),
     Float(f64),
-    Dictionary(Vec<(String, Value)>),
+    Map(Vec<(String, Value)>),
     List(Box<[Value]>),
     Boolean(bool),
     Null,
+    CAATFunction(ForeignFunction),
 }
 
 impl Value {
     pub fn to_json(&self) -> String {
         match self {
-            Value::Integer(i) => i.to_string(),
-            Value::String(s) => format!("\"{}\"", s.clone()),
-            Value::Float(f) => f.to_string(),
-            Value::Dictionary(d) => {
+            Value::Integer(i) => format!("{{\"type\": \"Integer\", \"value\": {}}}", i),
+            Value::String(s) => format!("{{\"type\": \"String\", \"value\": \"{}\"}}", s),
+            Value::Float(f) => format!("{{\"type\": \"Float\", \"value\": {}}}", f),
+            Value::Map(d) => {
                 let mut result = String::from("{");
                 for (key, value) in d {
                     result.push_str(&format!("\"{}\": {}, ", key, value.to_json()));
@@ -37,7 +38,7 @@ impl Value {
                 result.pop();
                 result.pop();
                 result.push_str("}");
-                result
+                format!("{{\"type\": \"Map\", \"value\": {}}}", result)
             }
             Value::List(l) => {
                 let mut result = String::from("[");
@@ -47,11 +48,11 @@ impl Value {
                 result.pop();
                 result.pop();
                 result.push_str("]");
-                result
+                format!("{{\"type\": \"List\", \"value\": {}}}", result)
             }
-            Value::Boolean(b) => b.to_string(),
-            Value::Null => "null".to_string(),
-                    
+            Value::Boolean(b) => format!("{{\"type\": \"Boolean\", \"value\": {}}}", b),
+            Value::Null => format!("{{\"type\": \"Boolean\", \"value\": null}}"),
+            Value::CAATFunction(s) => format!("{{\"type\": \"CAAT\", \"value\": \"{}\"}}", s),
         }
     }
 
@@ -69,44 +70,98 @@ impl Value {
         return result;
     }
     
-    pub fn from_json_value(value: JsonValue) -> Value {
+    pub fn from_json_value(value: &JsonValue) -> Option<Value> {
         match value {
-            JsonValue::Number(n) => {
-                let temp: f64 = n.into();
-                if temp % 1.0 != 0.0f64 {
-                    Value::Float(n.into())
-                } else {
-                    Value::Integer(n.as_fixed_point_i64(0).expect("Number was not an integer"))
-                }
-            }
-            JsonValue::String(s) => {
-                let int = s.parse::<i64>();
-                let float = s.parse::<f64>();
-                if let Ok(i) = int {
-                    Value::Integer(i)
-                } else if let Ok(f) = float {
-                    Value::Float(f)
-                } else {
-                    Value::String(s)
-                }
-            },
             JsonValue::Object(o) => {
-                let mut map = Vec::new();
-                for (key, value) in o.iter() {
-                    map.push((key.to_string(), Value::from_json_value(value.clone())));
+                if let Some(value) = o.get("type") {
+                    if let Some(the_type) = value.as_str() {
+                        match the_type {
+                            "Integer" => {
+                                if let Some(value) = o.get("value") {
+                                    if let Some(i) = value.as_i64() {
+                                        return Some(Value::Integer(i));
+                                    } else {
+                                        return Some(Value::Integer(0));
+                                    }
+                                } else {
+                                    return None;
+                                }
+                            },
+                            "Float" => {
+                                if let Some(value) = o.get("value") {
+                                    if let Some(f) = value.as_f64() {
+                                        return Some(Value::Float(f));
+                                    } else {
+                                        return Some(Value::Float(0.0));
+                                    }
+                                } else {
+                                    return None;
+                                }
+                            },
+                            "String" => {
+                                if let Some(value) = o.get("value") {
+                                    if let Some(s) = value.as_str() {
+                                        return Some(Value::String(s.to_string()));
+                                    } else {
+                                        return Some(Value::String(String::new()));
+                                    }
+                                } else {
+                                    return None;
+                                }
+                            },
+                            "Map" => {
+                                if let Some(value) = o.get("value") {
+                                    match value {
+                                        JsonValue::Object(o) => {
+                                            let mut map = Vec::new();
+                                            for (key, value) in o.iter() {
+                                                map.push((key.to_string(), Value::from_json_value(value)?))
+                                            }
+                                            return Some(Value::Map(map));
+                                        }
+                                        _ => None
+                                    }
+                                } else {
+                                    return None;
+                                }
+                            },
+                            "List" => {
+                                if let Some(value) = o.get("value") {
+                                    match value {
+                                        JsonValue::Array(a) => {
+                                            let mut list = Vec::new();
+                                            for value in a.iter() {
+                                                list.push(Value::from_json_value(value)?);
+                                            }
+                                            Some(Value::List(list.into_boxed_slice()))
+                                        }
+                                        _ => None
+                                    }
+                                } else {
+                                    return None;
+                                }
+                            },
+                            "CAAT" => {
+                                if let Some(value) = o.get("value") {
+                                    if let Some(command) = value.as_str() {
+                                        return Some(Value::CAATFunction(ForeignFunction::new(command)));
+                                    } else {
+                                        return None;
+                                    }
+                                } else {
+                                    return None;
+                                }
+                            }
+                            _ => None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
                 }
-                Value::Dictionary(map)
             }
-            JsonValue::Array(a) => {
-                let mut list = Vec::new();
-                for value in a.iter() {
-                    list.push(Value::from_json_value(value.clone()));
-                }
-                Value::List(list.into_boxed_slice())  
-            }
-            JsonValue::Boolean(b) => Value::Boolean(b),
-            JsonValue::Null => Value::Null,
-            JsonValue::Short(_) => panic!(),
+            _ => None
         }
             
     }
@@ -116,9 +171,9 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Value::Integer(i) => write!(f, "{}", i),
-            Value::String(s) => write!(f, "{}", s),
+            Value::String(s) => write!(f, "\"{}\"", s),
             Value::Float(fl) => write!(f, "{}", fl),
-            Value::Dictionary(d) => {
+            Value::Map(d) => {
                 write!(f, "{{")?;
                 for (key, value) in d {
                     write!(f, "\"{}\": {}, ", key, value)?;
@@ -134,6 +189,7 @@ impl fmt::Display for Value {
             }
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Null => write!(f, "null"),
+            Value::CAATFunction(s) => write!(f, "{}", s),
         }
     }
 }
@@ -144,8 +200,8 @@ impl fmt::Debug for Value {
             Value::Integer(i) => write!(f, "Integer({})", i),
             Value::String(s) => write!(f, "String({})", s),
             Value::Float(fl) => write!(f, "Float({})", fl),
-            Value::Dictionary(d) => {
-                write!(f, "Dictionary(")?;
+            Value::Map(d) => {
+                write!(f, "Map(")?;
                 for (key, value) in d {
                     write!(f, "\"{}\": {}, ", key, value)?;
                 }
@@ -160,6 +216,7 @@ impl fmt::Debug for Value {
             }
             Value::Boolean(b) => write!(f, "Boolean({})", b),
             Value::Null => write!(f, "Null"),
+            Value::CAATFunction(s) => write!(f, "Function({})", s),
         }
     }
 }
@@ -250,13 +307,13 @@ impl From<()> for Value {
 
 impl From<Vec<(String, Value)>> for Value {
     fn from(d: Vec<(String, Value)>) -> Self {
-        Value::Dictionary(d)
+        Value::Map(d)
     }
 }
 
 impl From<HashMap<String, Value>> for Value {
     fn from(d: HashMap<String, Value>) -> Self {
-        Value::Dictionary(d.into_iter().collect())
+        Value::Map(d.into_iter().collect())
     }
 }
 
@@ -444,7 +501,7 @@ impl TryFrom<Value> for Vec<(String, Value)> {
     type Error = &'static str;
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Dictionary(d) => Ok(d),
+            Value::Map(d) => Ok(d),
             _ => Err("Value is not a dictionary"),
         }
     }
@@ -484,34 +541,34 @@ impl TryFrom<Value> for HashMap<String, Value> {
     type Error = &'static str;
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Dictionary(d) => Ok(d.into_iter().collect()),
+            Value::Map(d) => Ok(d.into_iter().collect()),
             _ => Err("Value is not a dictionary"),
         }
     }
 }
 
-
-pub struct ForeignFunction<'a> {
-    pub name: &'a str,
-    args: Vec<&'a str>
+#[derive(Clone, PartialEq)]
+pub struct ForeignFunction {
+    pub name: String,
+    args: Vec<String>
 }
 
 
-impl<'a> ForeignFunction<'a> {
-    pub fn new<S: ?Sized>(name: &'a S) -> ForeignFunction<'a> 
+impl ForeignFunction {
+    pub fn new<S: ?Sized>(name: &S) -> ForeignFunction
     where S: AsRef<str> {
     let split = name.as_ref().split_whitespace().collect::<Vec<&str>>();
     
     Self {
-            name: split[0],
-            args: split[1..].to_vec(),
+            name: split[0].to_string(),
+            args: split[1..].into_iter().map(|x| x.to_string()).collect(),
         }
     }
 }
 
-impl ForeignFunction<'_> {
+impl ForeignFunction {
     pub fn call(&self, args: &[Value]) -> Value {
-        let mut command = Command::new(self.name);
+        let mut command = Command::new(&self.name);
         let mut new_args = Vec::new();
         for arg in &self.args {
             command.arg(arg);
@@ -581,12 +638,18 @@ impl ForeignFunction<'_> {
         drop(stream);
         std::fs::remove_file(socket_path).unwrap();
 
-        Value::from_json_value(json)
+        Value::from_json_value(&json).expect("Failed")
     }
 
     #[inline]
     fn read_json(string: String) -> JsonValue {
         return string.into()
+    }
+}
+
+impl fmt::Display for ForeignFunction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.name, self.args.join(" "))
     }
 }
 
@@ -598,7 +661,7 @@ impl Args {
     pub fn from_json(json: JsonValue) -> Args {
         let mut args = Vec::new();
         for value in json.members() {
-            args.push(Value::from_json_value(value.clone()));
+            args.push(Value::from_json_value(value).unwrap());
         }
         Args { args }
     }
