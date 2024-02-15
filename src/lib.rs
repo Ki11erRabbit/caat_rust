@@ -575,7 +575,10 @@ impl ForeignFunction {
             new_args.push(Value::String(arg.to_string()));
         }
         for arg in args {
-            command.arg(&arg.to_json());
+            match arg {
+                Value::String(value) => command.arg(&value),
+                _ => command.arg(&arg.to_json()),
+            };
         }
         new_args.extend_from_slice(args);
         let json = Value::as_json(&new_args);
@@ -598,7 +601,7 @@ impl ForeignFunction {
         let listener = local_socket::LocalSocketListener::bind(socket_path).expect("Could not bind to socket");
         listener.set_nonblocking(true).expect("Could not set nonblocking");
 
-
+        let mut try_wait = 3;
         let mut stream = loop {
             match listener.accept() {
                 Ok(stream) => break stream,
@@ -608,6 +611,49 @@ impl ForeignFunction {
                     }
                 }
             }
+            if try_wait < 3 {
+                try_wait += 1;
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                continue;
+            }
+
+            match handle.try_wait() {
+                Ok(Some(status)) => {
+                    if !status.success() {
+                        
+                        match listener.accept() {
+                            Ok(stream) => break stream,
+                            Err(e) => {
+                                if e.kind() != std::io::ErrorKind::WouldBlock {
+                                    panic!("Error accepting connection");
+                                }
+                            }
+                        }
+                        std::fs::remove_file(socket_path).unwrap();
+                        return match status.code() {
+                            Some(code) => Value::Integer(code as i64),
+                            None => Value::Null,
+                        };
+                    } else {
+                        match listener.accept() {
+                            Ok(stream) => break stream,
+                            Err(e) => {
+                                if e.kind() != std::io::ErrorKind::WouldBlock {
+                                    panic!("Error accepting connection");
+                                }
+                            }
+                        }
+                        std::fs::remove_file(socket_path).unwrap();
+                        return match status.code() {
+                            Some(code) => Value::Integer(code as i64),
+                            None => Value::Null,
+                        };
+                    }
+                },
+                Ok(None) => (),
+                Err(e) => panic!("Error waiting for process: {}", e),
+            }
+            try_wait = 0;
         };
 
         let mut json_string = String::new();
@@ -616,19 +662,19 @@ impl ForeignFunction {
             match handle.try_wait() {
                 Ok(Some(status)) => {
                     if !status.success() {
+                        std::fs::remove_file(socket_path).unwrap();
                         return match status.code() {
                             Some(code) => Value::Integer(code as i64),
                             None => Value::Null,
                         };
-                    }
-                    break;
+                    } 
                 },
                 Ok(None) => (),
                 Err(e) => panic!("Error waiting for process: {}", e),
             }
             let bytes = stream.read(&mut buffer).unwrap();
             json_string.push_str(&String::from_utf8_lossy(&buffer[..bytes]));
-            if bytes == 1024 {
+            if bytes < 1024 {
                 break;
             }
         }
