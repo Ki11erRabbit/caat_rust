@@ -171,7 +171,7 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Value::Integer(i) => write!(f, "{}", i),
-            Value::String(s) => write!(f, "\"{}\"", s),
+            Value::String(s) => write!(f, "{}", s),
             Value::Float(fl) => write!(f, "{}", fl),
             Value::Map(d) => {
                 write!(f, "{{")?;
