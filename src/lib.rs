@@ -51,7 +51,7 @@ impl Value {
                 format!("{{\"type\": \"List\", \"value\": {}}}", result)
             }
             Value::Boolean(b) => format!("{{\"type\": \"Boolean\", \"value\": {}}}", b),
-            Value::Null => format!("{{\"type\": \"Boolean\", \"value\": null}}"),
+            Value::Null => format!("{{\"type\": \"Null\", \"value\": null}}"),
             Value::CAATFunction(s) => format!("{{\"type\": \"CAAT\", \"value\": \"{}\"}}", s),
         }
     }
@@ -71,6 +71,7 @@ impl Value {
     }
     
     pub fn from_json_value(value: &JsonValue) -> Option<Value> {
+        eprintln!("{:?}", value);
         match value {
             JsonValue::Object(o) => {
                 if let Some(value) = o.get("type") {
