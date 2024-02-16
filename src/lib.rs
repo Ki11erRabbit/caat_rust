@@ -71,7 +71,6 @@ impl Value {
     }
     
     pub fn from_json_value(value: &JsonValue) -> Option<Value> {
-        eprintln!("{:?}", value);
         match json::parse(&value.to_string()).unwrap() {
             JsonValue::Object(o) => {
                 if let Some(value) = o.get("type") {
