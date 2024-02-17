@@ -1,9 +1,10 @@
 use std::process::Command;
+use std::rc::Rc;
 use interprocess::local_socket;
 use std::io::prelude::*;
 use std::collections::HashMap;
 use json::JsonValue;
-use std::fmt::{self, write};
+use std::fmt::{self};
 use std::process::Child;
 #[cfg(windows)]
 use dirs_next::home_dir;
@@ -12,7 +13,7 @@ const SOCKET_VAR: &str = "CAAT_SOCKET";
 const ARGS_VAR: &str = "CAAT_ARGS";
 
 
-#[derive(PartialEq, Clone)]
+#[derive(Clone)]
 pub enum Value {
     Integer(i64),
     String(String),
@@ -21,7 +22,7 @@ pub enum Value {
     List(Box<[Value]>),
     Boolean(bool),
     Null,
-    CAATFunction(ForeignFunction),
+    CAATFunction(Rc<dyn Caat>),
 }
 
 impl Value {
@@ -144,7 +145,7 @@ impl Value {
                             "CAAT" => {
                                 if let Some(value) = o.get("value") {
                                     if let Some(command) = value.as_str() {
-                                        return Some(Value::CAATFunction(ForeignFunction::new(command)));
+                                        return Some(Value::CAATFunction(Rc::new(ForeignFunction::new(command))));
                                     } else {
                                         return None;
                                     }
@@ -217,6 +218,21 @@ impl fmt::Debug for Value {
             Value::Boolean(b) => write!(f, "Boolean({})", b),
             Value::Null => write!(f, "Null"),
             Value::CAATFunction(s) => write!(f, "Function({})", s),
+        }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Value) -> bool {
+        match (self, other) {
+            (Value::Integer(i), Value::Integer(j)) => i == j,
+            (Value::String(s), Value::String(t)) => s == t,
+            (Value::Float(f), Value::Float(g)) => f == g,
+            (Value::Map(d), Value::Map(e)) => d == e,
+            (Value::List(l), Value::List(m)) => l == m,
+            (Value::Boolean(b), Value::Boolean(c)) => b == c,
+            (Value::Null, Value::Null) => true,
+            _ => false,
         }
     }
 }
@@ -547,6 +563,12 @@ impl TryFrom<Value> for HashMap<String, Value> {
     }
 }
 
+
+
+pub trait Caat: fmt::Display {
+    fn call(&self, args: &[Value]) -> Value;
+}
+
 #[derive(Clone, PartialEq)]
 pub struct ForeignFunction {
     pub name: String,
@@ -567,33 +589,6 @@ impl ForeignFunction {
 }
 
 impl ForeignFunction {
-    pub fn call(&self, args: &[Value]) -> Value {
-        let mut command = Command::new(&self.name);
-        let mut new_args = Vec::new();
-        for arg in &self.args {
-            command.arg(arg);
-            new_args.push(Value::String(arg.to_string()));
-        }
-        for arg in args {
-            match arg {
-                Value::String(value) => command.arg(&value),
-                _ => command.arg(&arg.to_json()),
-            };
-        }
-        new_args.extend_from_slice(args);
-        let json = Value::as_json(&new_args);
-
-        command.env(ARGS_VAR, &json);
-        let pid = std::process::id();
-        #[cfg(unix)]
-        let socket_path = format!("/tmp/caat_{}.sock", pid);
-        #[cfg(windows)]
-        let socket_path = format!("{}\\AppData\\Local\\Temp\\caat_{}.sock", home_dir(), pid);
-        command.env(SOCKET_VAR, &socket_path);
-        let handle = command.spawn().unwrap();
-
-        return ForeignFunction::open_socket(handle, &socket_path);
-    }
 
     #[inline]
     fn open_socket(mut handle: Child, socket_path: &str) -> Value {
@@ -690,6 +685,36 @@ impl ForeignFunction {
     #[inline]
     fn read_json(string: String) -> JsonValue {
         return string.into()
+    }
+}
+
+impl Caat for ForeignFunction {
+    fn call(&self, args: &[Value]) -> Value {
+        let mut command = Command::new(&self.name);
+        let mut new_args = Vec::new();
+        for arg in &self.args {
+            command.arg(arg);
+            new_args.push(Value::String(arg.to_string()));
+        }
+        for arg in args {
+            match arg {
+                Value::String(value) => command.arg(&value),
+                _ => command.arg(&arg.to_json()),
+            };
+        }
+        new_args.extend_from_slice(args);
+        let json = Value::as_json(&new_args);
+
+        command.env(ARGS_VAR, &json);
+        let pid = std::process::id();
+        #[cfg(unix)]
+        let socket_path = format!("/tmp/caat_{}.sock", pid);
+        #[cfg(windows)]
+        let socket_path = format!("{}\\AppData\\Local\\Temp\\caat_{}.sock", home_dir(), pid);
+        command.env(SOCKET_VAR, &socket_path);
+        let handle = command.spawn().unwrap();
+
+        return ForeignFunction::open_socket(handle, &socket_path);
     }
 }
 
