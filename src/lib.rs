@@ -1,5 +1,5 @@
 use std::process::Command;
-use std::rc::Rc;
+use std::sync::Arc;
 use interprocess::local_socket;
 use std::io::prelude::*;
 use std::collections::HashMap;
@@ -22,7 +22,7 @@ pub enum Value {
     List(Box<[Value]>),
     Boolean(bool),
     Null,
-    CAATFunction(Rc<dyn Caat>),
+    CAATFunction(Arc<dyn Caat>),
     Failure(String),
 }
 
@@ -147,7 +147,7 @@ impl Value {
                             "CAAT" => {
                                 if let Some(value) = o.get("value") {
                                     if let Some(command) = value.as_str() {
-                                        return Some(Value::CAATFunction(Rc::new(ForeignFunction::new(command))));
+                                        return Some(Value::CAATFunction(Arc::new(ForeignFunction::new(command))));
                                     } else {
                                         return None;
                                     }
