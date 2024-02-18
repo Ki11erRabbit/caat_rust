@@ -23,6 +23,7 @@ pub enum Value {
     Boolean(bool),
     Null,
     CAATFunction(Rc<dyn Caat>),
+    Falure,
 }
 
 impl Value {
@@ -54,6 +55,7 @@ impl Value {
             Value::Boolean(b) => format!("{{\"type\": \"Boolean\", \"value\": {}}}", b),
             Value::Null => format!("{{\"type\": \"Null\", \"value\": null}}"),
             Value::CAATFunction(s) => format!("{{\"type\": \"CAAT\", \"value\": \"{}\"}}", s),
+            Value::Falure => format!("{{\"type\": \"Falure\", \"value\": null}}"),
         }
     }
 
@@ -152,8 +154,42 @@ impl Value {
                                 } else {
                                     return None;
                                 }
-                            }
+                            },
+                            "Boolean" => {
+                                if let Some(value) = o.get("value") {
+                                    if let Some(b) = value.as_bool() {
+                                        return Some(Value::Boolean(b));
+                                    } else {
+                                        return Some(Value::Boolean(false));
+                                    }
+                                } else {
+                                    return None;
+                                }
+                            },
+                            "Null" => {
+                                if let Some(value) = o.get("value") {
+                                    if value.is_null() {
+                                        return Some(Value::Null);
+                                    } else {
+                                        return None;
+                                    }
+                                } else {
+                                    return None;
+                                }
+                            },
+                            "Falure" => {
+                                if let Some(value) = o.get("value") {
+                                    if value.is_null() {
+                                        return Some(Value::Falure);
+                                    } else {
+                                        return None;
+                                    }
+                                } else {
+                                    return None;
+                                }
+                            },
                             _ => None
+
                         }
                     } else {
                         None
@@ -191,6 +227,7 @@ impl fmt::Display for Value {
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Null => write!(f, "null"),
             Value::CAATFunction(s) => write!(f, "{}", s),
+            Value::Falure => write!(f, "Falure"),
         }
     }
 }
@@ -218,6 +255,7 @@ impl fmt::Debug for Value {
             Value::Boolean(b) => write!(f, "Boolean({})", b),
             Value::Null => write!(f, "Null"),
             Value::CAATFunction(s) => write!(f, "Function({})", s),
+            Value::Falure => write!(f, "Falure"),
         }
     }
 }
@@ -593,8 +631,18 @@ impl ForeignFunction {
     #[inline]
     fn open_socket(mut handle: Child, socket_path: &str) -> Value {
 
-        let listener = local_socket::LocalSocketListener::bind(socket_path).expect("Could not bind to socket");
-        listener.set_nonblocking(true).expect("Could not set nonblocking");
+        let listener = match local_socket::LocalSocketListener::bind(socket_path) {
+            Ok(listener) => listener,
+            Err(_) => {
+                return ForeignFunction::cleanup(socket_path);
+            }
+        };
+        match listener.set_nonblocking(true) {
+            Ok(_) => (),
+            Err(_) => {
+                return ForeignFunction::cleanup(socket_path);
+            }
+        };
 
         let mut try_wait = 3;
         let mut stream = loop {
@@ -602,7 +650,7 @@ impl ForeignFunction {
                 Ok(stream) => break stream,
                 Err(e) => {
                     if e.kind() != std::io::ErrorKind::WouldBlock {
-                        panic!("Error accepting connection");
+                        return ForeignFunction::cleanup(socket_path);
                     }
                 }
             }
@@ -620,7 +668,7 @@ impl ForeignFunction {
                             Ok(stream) => break stream,
                             Err(e) => {
                                 if e.kind() != std::io::ErrorKind::WouldBlock {
-                                    panic!("Error accepting connection");
+                                    return ForeignFunction::cleanup(socket_path);
                                 }
                             }
                         }
@@ -634,7 +682,7 @@ impl ForeignFunction {
                             Ok(stream) => break stream,
                             Err(e) => {
                                 if e.kind() != std::io::ErrorKind::WouldBlock {
-                                    panic!("Error accepting connection");
+                                    return ForeignFunction::cleanup(socket_path);
                                 }
                             }
                         }
@@ -650,6 +698,7 @@ impl ForeignFunction {
             }
             try_wait = 0;
         };
+        let _ = stream.set_nonblocking(true);
 
         let mut json_string = String::new();
         let mut buffer = [0; 1024];
@@ -657,7 +706,7 @@ impl ForeignFunction {
             match handle.try_wait() {
                 Ok(Some(status)) => {
                     if !status.success() {
-                        std::fs::remove_file(socket_path).unwrap();
+                        let _ = std::fs::remove_file(socket_path);
                         return match status.code() {
                             Some(code) => Value::Integer(code as i64),
                             None => Value::Null,
@@ -665,9 +714,18 @@ impl ForeignFunction {
                     } 
                 },
                 Ok(None) => (),
-                Err(e) => panic!("Error waiting for process: {}", e),
+                Err(_) => return ForeignFunction::cleanup(socket_path),
             }
-            let bytes = stream.read(&mut buffer).unwrap();
+            let bytes = match stream.read(&mut buffer) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    if e.kind() != std::io::ErrorKind::WouldBlock {
+                        let _ = std::fs::remove_file(socket_path);
+                        return Value::Falure;
+                    }
+                    continue;
+                }
+            };
             json_string.push_str(&String::from_utf8_lossy(&buffer[..bytes]));
             if bytes < 1024 {
                 break;
@@ -677,9 +735,17 @@ impl ForeignFunction {
         let _ = handle.wait();
 
         drop(stream);
-        std::fs::remove_file(socket_path).unwrap();
+        let _ = std::fs::remove_file(socket_path);
 
-        Value::from_json_value(&json).expect("Failed")
+        match Value::from_json_value(&json) {
+            Some(value) => value,
+            None => Value::Falure,
+        }
+    }
+    
+    fn cleanup(socket_path: &str) -> Value {
+        let _ = std::fs::remove_file(socket_path);
+        return Value::Falure;
     }
 
     #[inline]
@@ -712,7 +778,10 @@ impl Caat for ForeignFunction {
         #[cfg(windows)]
         let socket_path = format!("{}\\AppData\\Local\\Temp\\caat_{}.sock", home_dir(), pid);
         command.env(SOCKET_VAR, &socket_path);
-        let handle = command.spawn().unwrap();
+        let handle = match command.spawn() {
+            Ok(handle) => handle,
+            Err(_) => return Value::Falure,
+        };
 
         return ForeignFunction::open_socket(handle, &socket_path);
     }
