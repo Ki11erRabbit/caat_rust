@@ -22,7 +22,7 @@ pub enum Value {
     List(Box<[Value]>),
     Boolean(bool),
     Null,
-    CAATFunction(Arc<dyn Caat + Send>),
+    CAATFunction(Arc<dyn Caat + Send + Sync>),
     Failure(String),
 }
 
