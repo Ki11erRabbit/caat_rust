@@ -18,7 +18,7 @@ pub enum Value {
     Integer(i64),
     String(String),
     Float(f64),
-    Map(Vec<(String, Value)>),
+    Map(HashMap<String, Value>, Option<String>),
     List(Box<[Value]>),
     Boolean(bool),
     Null,
@@ -32,7 +32,17 @@ impl Value {
             Value::Integer(i) => format!("{{\"type\": \"Integer\", \"value\": {}}}", i),
             Value::String(s) => format!("{{\"type\": \"String\", \"value\": \"{}\"}}", s),
             Value::Float(f) => format!("{{\"type\": \"Float\", \"value\": {}}}", f),
-            Value::Map(d) => {
+            Value::Map(d, Some(format)) => {
+                let mut result = String::from("{");
+                for (key, value) in d {
+                    result.push_str(&format!("\"{}\": {}, ", key, value.to_json()));
+                }
+                result.pop();
+                result.pop();
+                result.push_str("}");
+                format!("{{\"type\": \"Map\", \"value\": {}, \"format\": {}}}", result, format)
+            }
+            Value::Map(d, None) => {
                 let mut result = String::from("{");
                 for (key, value) in d {
                     result.push_str(&format!("\"{}\": {}, ", key, value.to_json()));
@@ -116,11 +126,19 @@ impl Value {
                                 if let Some(value) = o.get("value") {
                                     match value {
                                         JsonValue::Object(o) => {
-                                            let mut map = Vec::new();
+                                            let mut map = HashMap::new();
                                             for (key, value) in o.iter() {
-                                                map.push((key.to_string(), Value::from_json_value(value)?))
+                                                map.insert(key.to_string(), Value::from_json_value(value)?);
                                             }
-                                            return Some(Value::Map(map));
+                                            if let Some(format) = o.get("format") {
+                                                if let Some(s) = format.as_str() {
+                                                    return Some(Value::Map(map, Some(s.to_string())));
+                                                } else {
+                                                    return Some(Value::Map(map, None));
+                                                }
+                                            } else {
+                                                return Some(Value::Map(map, None));
+                                            }
                                         }
                                         _ => None
                                     }
@@ -210,7 +228,15 @@ impl fmt::Display for Value {
             Value::Integer(i) => write!(f, "{}", i),
             Value::String(s) => write!(f, "{}", s),
             Value::Float(fl) => write!(f, "{}", fl),
-            Value::Map(d) => {
+            Value::Map(d, Some(format)) => {
+                write!(f, "{{")?;
+                for (key, value) in d {
+                    write!(f, "\"{}\": {}, ", key, value)?;
+                }
+                write!(f, "\"format\": {}", format);
+                write!(f, "}}")
+            }
+            Value::Map(d, None) => {
                 write!(f, "{{")?;
                 for (key, value) in d {
                     write!(f, "\"{}\": {}, ", key, value)?;
@@ -238,7 +264,15 @@ impl fmt::Debug for Value {
             Value::Integer(i) => write!(f, "Integer({})", i),
             Value::String(s) => write!(f, "String({})", s),
             Value::Float(fl) => write!(f, "Float({})", fl),
-            Value::Map(d) => {
+            Value::Map(d, Some(format)) => {
+                write!(f, "Map(")?;
+                for (key, value) in d {
+                    write!(f, "\"{}\": {}, ", key, value)?;
+                }
+                write!(f, ", {}", format);
+                write!(f, ")")
+            }
+            Value::Map(d, None) => {
                 write!(f, "Map(")?;
                 for (key, value) in d {
                     write!(f, "\"{}\": {}, ", key, value)?;
@@ -266,7 +300,7 @@ impl PartialEq for Value {
             (Value::Integer(i), Value::Integer(j)) => i == j,
             (Value::String(s), Value::String(t)) => s == t,
             (Value::Float(f), Value::Float(g)) => f == g,
-            (Value::Map(d), Value::Map(e)) => d == e,
+            (Value::Map(d, _), Value::Map(e, _)) => d == e,
             (Value::List(l), Value::List(m)) => l == m,
             (Value::Boolean(b), Value::Boolean(c)) => b == c,
             (Value::Null, Value::Null) => true,
