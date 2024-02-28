@@ -706,7 +706,7 @@ impl ForeignFunction {
                                 }
                             }
                         }
-                        std::fs::remove_file(socket_path).unwrap();
+                        let _ = std::fs::remove_file(socket_path);
                         return match status.code() {
                             Some(code) => Value::Integer(code as i64),
                             None => Value::Null,
@@ -720,7 +720,7 @@ impl ForeignFunction {
                                 }
                             }
                         }
-                        std::fs::remove_file(socket_path).unwrap();
+                        let _ = std::fs::remove_file(socket_path);
                         return match status.code() {
                             Some(code) => Value::Integer(code as i64),
                             None => Value::Null,
@@ -888,7 +888,12 @@ pub fn args() -> Args {
 macro_rules! return_caat {
     ($e:expr) => {
         let json = $e.into();
-        let socket_path = std::env::var(SOCKET_VAR).unwrap();
+        let socket_path = match std::env::var(SOCKET_VAR) {
+            Ok(s) => s,
+            Err(_) => {
+                std::process::exit(0);
+            }
+        }
         let mut stream = std::os::unix::net::UnixStream::connect(&socket_path).unwrap();
         stream.write_all(json.dump().as_bytes()).unwrap();
         stream.shutdown(std::net::Shutdown::Both).unwrap();
