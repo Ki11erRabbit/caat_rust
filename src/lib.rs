@@ -395,13 +395,17 @@ impl From<()> for Value {
 
 impl From<Vec<(String, Value)>> for Value {
     fn from(d: Vec<(String, Value)>) -> Self {
-        Value::Map(d)
+        let mut map = HashMap::new();
+        for (key, value) in d {
+            map.insert(key, value);
+        }
+        Value::Map(map, None)
     }
 }
 
 impl From<HashMap<String, Value>> for Value {
     fn from(d: HashMap<String, Value>) -> Self {
-        Value::Map(d.into_iter().collect())
+        Value::Map(d, None)
     }
 }
 
@@ -585,11 +589,11 @@ impl TryFrom<Value> for bool {
     }
 }
 
-impl TryFrom<Value> for Vec<(String, Value)> {
+impl TryFrom<Value> for HashMap<String, Value> {
     type Error = &'static str;
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Map(d) => Ok(d),
+            Value::Map(d, _) => Ok(d),
             _ => Err("Value is not a dictionary"),
         }
     }
@@ -625,15 +629,6 @@ impl TryFrom<Value> for () {
     }
 }
 
-impl TryFrom<Value> for HashMap<String, Value> {
-    type Error = &'static str;
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        match value {
-            Value::Map(d) => Ok(d.into_iter().collect()),
-            _ => Err("Value is not a dictionary"),
-        }
-    }
-}
 
 
 
