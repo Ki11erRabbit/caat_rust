@@ -848,6 +848,9 @@ impl Args {
 impl Iterator for Args {
     type Item = Value;
     fn next(&mut self) -> Option<Value> {
+        if self.args.is_empty() {
+            return None;
+        }
         self.args.drain(..1).next()
     }
 }
